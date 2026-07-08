@@ -26,11 +26,15 @@ class DBHelper {
 
     return await openDatabase(
       path,
-      version: 2, // Upgraded database version for Phase 2 complaints schema
+      version: 3, // Upgraded to version 3 to support complaint status history tracking
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
   }
+
 
   Future<void> _createDB(Database db, int version) async {
     // Enable foreign keys
@@ -95,9 +99,20 @@ class DBHelper {
         FOREIGN KEY (citizen_id) REFERENCES citizens (id) ON DELETE CASCADE
       )
     ''');
+
+    // Status History table
+    await db.execute('''
+      CREATE TABLE complaint_status_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        complaintId INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        FOREIGN KEY (complaintId) REFERENCES complaints (id) ON DELETE CASCADE
+      )
+    ''');
   }
 
-  // Handle migration from schema version 1 to 2
+  // Handle migration from schema versions
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute('DROP TABLE IF EXISTS complaints');
@@ -115,6 +130,42 @@ class DBHelper {
           FOREIGN KEY (citizenId) REFERENCES citizens (id) ON DELETE CASCADE
         )
       ''');
+    }
+    if (oldVersion < 3) {
+      // Create status history table
+      await db.execute('''
+        CREATE TABLE complaint_status_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          complaintId INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          updatedAt TEXT NOT NULL,
+          FOREIGN KEY (complaintId) REFERENCES complaints (id) ON DELETE CASCADE
+        )
+      ''');
+
+      // Populate history for existing complaints
+      final List<Map<String, dynamic>> existingComplaints = await db.query('complaints');
+      for (var comp in existingComplaints) {
+        final complaintId = comp['id'] as int;
+        final createdAt = comp['createdAt'] as String;
+        final currentStatus = comp['status'] as String;
+
+        // Insert initial Pending entry
+        await db.insert('complaint_status_history', {
+          'complaintId': complaintId,
+          'status': 'Pending',
+          'updatedAt': createdAt,
+        });
+
+        // If the current status is not Pending, also log the transition to the current status
+        if (currentStatus != 'Pending') {
+          await db.insert('complaint_status_history', {
+            'complaintId': complaintId,
+            'status': currentStatus,
+            'updatedAt': createdAt,
+          });
+        }
+      }
     }
   }
 
@@ -189,7 +240,15 @@ class DBHelper {
   Future<int> insertComplaint(Complaint complaint) async {
     final db = await database;
     try {
-      return await db.insert('complaints', complaint.toMap());
+      final complaintId = await db.insert('complaints', complaint.toMap());
+      if (complaintId != -1) {
+        await db.insert('complaint_status_history', {
+          'complaintId': complaintId,
+          'status': complaint.status,
+          'updatedAt': complaint.createdAt,
+        });
+      }
+      return complaintId;
     } catch (e) {
       return -1;
     }
@@ -226,12 +285,25 @@ class DBHelper {
   // Update status of a complaint (Pending, In Progress, Resolved)
   Future<int> updateComplaintStatus(int id, String status) async {
     final db = await database;
-    return await db.update(
+    final now = DateTime.now();
+    final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+    final result = await db.update(
       'complaints',
       {'status': status},
       where: 'id = ?',
       whereArgs: [id],
     );
+
+    if (result > 0) {
+      await db.insert('complaint_status_history', {
+        'complaintId': id,
+        'status': status,
+        'updatedAt': dateStr,
+      });
+    }
+
+    return result;
   }
 
   // Delete a complaint
@@ -243,6 +315,22 @@ class DBHelper {
       whereArgs: [id],
     );
   }
+
+  // Get status history for a specific complaint
+  Future<List<ComplaintStatusHistory>> getComplaintStatusHistory(int complaintId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'complaint_status_history',
+      where: 'complaintId = ?',
+      whereArgs: [complaintId],
+      orderBy: 'id ASC',
+    );
+
+    return List.generate(maps.length, (i) {
+      return ComplaintStatusHistory.fromMap(maps[i]);
+    });
+  }
+
 
   // Fetch counts of complaints by status for a specific citizen
   Future<Map<String, int>> getCitizenComplaintMetrics(int citizenId) async {

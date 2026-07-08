@@ -51,3 +51,36 @@ class Complaint {
     );
   }
 }
+
+class ComplaintStatusHistory {
+  final int? id;
+  final int complaintId;
+  final String status;
+  final String updatedAt;
+
+  ComplaintStatusHistory({
+    this.id,
+    required this.complaintId,
+    required this.status,
+    required this.updatedAt,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      if (id != null) 'id': id,
+      'complaintId': complaintId,
+      'status': status,
+      'updatedAt': updatedAt,
+    };
+  }
+
+  factory ComplaintStatusHistory.fromMap(Map<String, dynamic> map) {
+    return ComplaintStatusHistory(
+      id: map['id'] as int?,
+      complaintId: map['complaintId'] as int,
+      status: map['status'] as String,
+      updatedAt: map['updatedAt'] as String,
+    );
+  }
+}
+

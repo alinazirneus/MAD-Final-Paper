@@ -577,26 +577,34 @@ class _AdminDashboardState extends State<AdminDashboard> {
           )
         ],
       ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.all(16),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Material(
+          color: Colors.transparent,
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.all(16),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Category label
-                  Text(
-                    complaint.category.toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.primaryBlue.withValues(alpha: 0.6),
-                      letterSpacing: 1.2,
-                    ),
-                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Category label
+                      Expanded(
+                        child: Text(
+                          complaint.category.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.primaryBlue.withValues(alpha: 0.6),
+                            letterSpacing: 1.2,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                   // Status badge
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -736,6 +744,130 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   const SizedBox(height: 20),
                   const Divider(),
                   const SizedBox(height: 12),
+                  const Text(
+                    'Status Tracking Timeline:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primaryBlue),
+                  ),
+                  const SizedBox(height: 12),
+                  FutureBuilder<List<ComplaintStatusHistory>>(
+                    future: DBHelper().getComplaintStatusHistory(complaint.id!),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(12.0),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryBlue),
+                            ),
+                          ),
+                        );
+                      }
+                      if (snapshot.hasError) {
+                        return Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Text(
+                            'Error loading history: ${snapshot.error}',
+                            style: const TextStyle(fontSize: 12, color: Colors.redAccent),
+                          ),
+                        );
+                      }
+                      final historyList = snapshot.data ?? [];
+                      if (historyList.isEmpty) {
+                        return const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: Text(
+                            'No history available for this complaint.',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        );
+                      }
+
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Column(
+                          children: List.generate(historyList.length, (idx) {
+                            final history = historyList[idx];
+                            final isLast = idx == historyList.length - 1;
+
+                            IconData statusIcon;
+                            Color statusColor;
+                            if (history.status == 'Resolved') {
+                              statusIcon = Icons.check_circle_rounded;
+                              statusColor = Colors.green;
+                            } else if (history.status == 'In Progress') {
+                              statusIcon = Icons.play_circle_rounded;
+                              statusColor = Colors.blue;
+                            } else {
+                              statusIcon = Icons.pending_rounded;
+                              statusColor = Colors.orange;
+                            }
+
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Column(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: statusColor.withValues(alpha: 0.1),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(statusIcon, color: statusColor, size: 18),
+                                    ),
+                                    if (!isLast)
+                                      Container(
+                                        width: 2,
+                                        height: 30,
+                                        color: Colors.grey.shade300,
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(top: 2.0),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          history.status == 'Pending' ? 'Complaint Submitted (Pending)' : 'Status updated to ${history.status}',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: Colors.grey.shade800,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          history.updatedAt,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade500,
+                                          ),
+                                        ),
+                                        if (!isLast) const SizedBox(height: 12),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 12),
 
                   // Actions: Change Status and Delete
                   Row(
@@ -790,7 +922,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ],
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 
   // Category Icon helper
