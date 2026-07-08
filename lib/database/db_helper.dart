@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import '../models/citizen_model.dart';
 import '../models/complaint_model.dart';
 import '../models/announcement_model.dart';
+import '../models/feedback_model.dart';
 
 class DBHelper {
   static final DBHelper _instance = DBHelper._internal();
@@ -27,7 +28,7 @@ class DBHelper {
 
     return await openDatabase(
       path,
-      version: 4, // Upgraded to version 4 to support updated announcements table schema
+      version: 5, // Upgraded to version 5 to support updated feedback table schema
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -90,14 +91,14 @@ class DBHelper {
       )
     ''');
 
-    // Feedback table
+    // Feedback table (updated in version 5 to match spec columns)
     await db.execute('''
       CREATE TABLE feedback (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        suggestion TEXT NOT NULL,
-        citizen_id INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY (citizen_id) REFERENCES citizens (id) ON DELETE CASCADE
+        citizenId INTEGER NOT NULL,
+        feedback TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (citizenId) REFERENCES citizens (id) ON DELETE CASCADE
       )
     ''');
 
@@ -176,6 +177,18 @@ class DBHelper {
           title TEXT NOT NULL,
           description TEXT NOT NULL,
           createdAt TEXT NOT NULL
+        )
+      ''');
+    }
+    if (oldVersion < 5) {
+      await db.execute('DROP TABLE IF EXISTS feedback');
+      await db.execute('''
+        CREATE TABLE feedback (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          citizenId INTEGER NOT NULL,
+          feedback TEXT NOT NULL,
+          createdAt TEXT NOT NULL,
+          FOREIGN KEY (citizenId) REFERENCES citizens (id) ON DELETE CASCADE
         )
       ''');
     }
@@ -453,6 +466,41 @@ class DBHelper {
     final db = await database;
     return await db.delete(
       'announcements',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  // --- FEEDBACK OPERATIONS ---
+
+  // Insert feedback
+  Future<int> insertFeedback(FeedbackModel feedback) async {
+    final db = await database;
+    try {
+      return await db.insert('feedback', feedback.toMap());
+    } catch (e) {
+      return -1;
+    }
+  }
+
+  // Get all feedback, sorted newest first
+  Future<List<FeedbackModel>> getAllFeedback() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'feedback',
+      orderBy: 'id DESC',
+    );
+
+    return List.generate(maps.length, (i) {
+      return FeedbackModel.fromMap(maps[i]);
+    });
+  }
+
+  // Delete feedback
+  Future<int> deleteFeedback(int id) async {
+    final db = await database;
+    return await db.delete(
+      'feedback',
       where: 'id = ?',
       whereArgs: [id],
     );

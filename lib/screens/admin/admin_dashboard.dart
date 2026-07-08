@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/citizen_model.dart';
 import '../../models/complaint_model.dart';
 import '../../models/announcement_model.dart';
+import '../../models/feedback_model.dart';
 import '../../database/db_helper.dart';
 import '../../widgets/app_colors.dart';
 import '../../widgets/custom_dialog.dart';
@@ -36,6 +37,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   // Cached citizen details to display reporter names
   Map<int, Citizen> _registeredCitizens = {};
+
+  // Active sub-report center view index (null = reports list grid)
+  int? _activeReportIndex;
 
   @override
   void initState() {
@@ -172,6 +176,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void _navigateToTab(int index) {
     setState(() {
       _selectedTabIndex = index;
+      _activeReportIndex = null;
     });
     // Refresh admin data when navigating to tabs
     _loadAllAdminData();
@@ -188,6 +193,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _buildCitizensTab(),
       _buildComplaintsTab(),
       _buildAnnouncementsTab(),
+      _buildViewFeedbackTab(),
+      _buildReportsTab(),
     ];
 
     return Scaffold(
@@ -202,7 +209,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ? 'Registered Citizens'
                   : _selectedTabIndex == 2
                       ? 'Manage Complaints'
-                      : 'Announcement Board',
+                      : _selectedTabIndex == 3
+                          ? 'Announcement Board'
+                          : _selectedTabIndex == 4
+                              ? 'View Feedback'
+                              : 'Reports Center',
           style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.white),
         ),
         backgroundColor: AppColors.primaryBlue,
@@ -643,9 +654,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 children: [
                   const Icon(Icons.person_outline_rounded, size: 13, color: Colors.grey),
                   const SizedBox(width: 4),
-                  Text(
-                    'Filed by: $reporterName',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                  Expanded(
+                    child: Text(
+                      'Filed by: $reporterName',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
@@ -1453,6 +1468,789 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  Widget _buildViewFeedbackTab() {
+    return FutureBuilder<List<dynamic>>(
+      future: Future.wait([
+        DBHelper().getAllFeedback(),
+        DBHelper().getAllCitizens(),
+      ]),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        final feedbackList = (snapshot.data?[0] as List<FeedbackModel>?) ?? [];
+        final citizenList = (snapshot.data?[1] as List<Citizen>?) ?? [];
+        final citizenMap = {for (var c in citizenList) c.id: c.name};
+
+        if (feedbackList.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryBlueAccent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.rate_review_outlined, size: 64, color: AppColors.primaryBlue),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'No Feedback Submitted',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Citizens have not submitted any feedback yet. All submitted suggestions will show up here.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade500, height: 1.4),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+          itemCount: feedbackList.length,
+          itemBuilder: (context, index) {
+            final feedback = feedbackList[index];
+            final citizenName = citizenMap[feedback.citizenId] ?? 'Unknown Citizen';
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.primaryBlueAccent, width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  )
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: AppColors.primaryBlueAccent,
+                        child: Text(
+                          citizenName.isNotEmpty ? citizenName[0].toUpperCase() : 'C',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              citizenName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(Icons.access_time_rounded, size: 12, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text(
+                                  feedback.createdAt,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, size: 20, color: Colors.redAccent),
+                        onPressed: () => _confirmDeleteFeedback(feedback.id!),
+                        tooltip: 'Delete Feedback',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Text(
+                    feedback.feedback,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.black87,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmDeleteFeedback(int id) async {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      transitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (context, anim1, anim2) => Container(),
+      transitionBuilder: (dialogContext, anim1, anim2, child) {
+        return ScaleTransition(
+          scale: CurvedAnimation(parent: anim1, curve: Curves.easeInOut),
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Delete Feedback?', style: TextStyle(fontWeight: FontWeight.bold)),
+            content: const Text('Are you sure you want to delete this feedback? This action cannot be undone.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text('Cancel', style: TextStyle(color: Colors.grey.shade600)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  Navigator.pop(dialogContext); // Close confirmation dialog
+                  try {
+                    final result = await DBHelper().deleteFeedback(id);
+                    if (result > 0) {
+                      if (mounted) {
+                        CustomDialog.show(
+                          context: context,
+                          title: 'Success',
+                          message: 'Feedback deleted successfully.',
+                          type: CustomDialogType.success,
+                          onConfirm: () {
+                            setState(() {}); // reload tab data
+                          },
+                        );
+                      }
+                    } else {
+                      if (mounted) {
+                        CustomDialog.show(
+                          context: context,
+                          title: 'Error',
+                          message: 'Failed to delete feedback.',
+                          type: CustomDialogType.error,
+                        );
+                      }
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      CustomDialog.show(
+                        context: context,
+                        title: 'Error',
+                        message: 'Error: ${e.toString()}',
+                        type: CustomDialogType.error,
+                      );
+                    }
+                  }
+                },
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildReportsTab() {
+    if (_activeReportIndex != null) {
+      return _buildSubReportView(_activeReportIndex!);
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Report Center Header Card
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppColors.primaryBlue, AppColors.primaryBlueLight],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryBlue.withValues(alpha: 0.15),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
+                )
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.bar_chart_rounded, color: Colors.white, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Reports Center',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Access analytical reports on registered users, municipal complaints, resolution statuses, and citizen feedback summaries.',
+                  style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.9), height: 1.4),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 2x2 Grid of Report Selection Cards
+          GridView.count(
+            crossAxisCount: 2,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            childAspectRatio: 0.85,
+            children: [
+              _buildReportSelectionCard(
+                index: 1,
+                title: 'Citizens',
+                description: 'Registered profiles, address & contact list.',
+                icon: Icons.people_rounded,
+                color: Colors.teal.shade600,
+              ),
+              _buildReportSelectionCard(
+                index: 2,
+                title: 'Complaints',
+                description: 'Full logs, location details & submit dates.',
+                icon: Icons.assignment_rounded,
+                color: Colors.indigo.shade600,
+              ),
+              _buildReportSelectionCard(
+                index: 3,
+                title: 'Case Status',
+                description: 'Overview categorized by resolution stage.',
+                icon: Icons.donut_large_rounded,
+                color: Colors.orange.shade700,
+              ),
+              _buildReportSelectionCard(
+                index: 4,
+                title: 'Feedback',
+                description: 'Citizen reviews & service suggestions.',
+                icon: Icons.rate_review_rounded,
+                color: Colors.purple.shade600,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReportSelectionCard({
+    required int index,
+    required String title,
+    required String description,
+    required IconData icon,
+    required Color color,
+  }) {
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _activeReportIndex = index;
+        });
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.primaryBlueAccent, width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            )
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryBlue,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubReportView(int index) {
+    String title = '';
+    Widget child = const SizedBox();
+
+    switch (index) {
+      case 1:
+        title = 'Citizen Registration Report';
+        child = _buildCitizenRegistrationReport();
+        break;
+      case 2:
+        title = 'Complaint Report';
+        child = _buildComplaintReport();
+        break;
+      case 3:
+        title = 'Complaint Status Report';
+        child = _buildComplaintStatusReport();
+        break;
+      case 4:
+        title = 'Feedback Report';
+        child = _buildFeedbackReport();
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: () => setState(() => _activeReportIndex = null),
+                icon: const Icon(Icons.arrow_back_rounded, color: AppColors.primaryBlue, size: 18),
+                label: const Text(
+                  'Back to Reports',
+                  style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primaryBlue,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCitizenRegistrationReport() {
+    return FutureBuilder<List<Citizen>>(
+      future: DBHelper().getAllCitizens(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        final list = snapshot.data ?? [];
+        if (list.isEmpty) {
+          return _buildEmptyState('No registered citizens found', Icons.people_outline_rounded);
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 110),
+          itemCount: list.length,
+          itemBuilder: (context, index) {
+            final citizen = list[index];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.primaryBlueAccent, width: 1.2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: AppColors.primaryBlueAccent,
+                        child: Text(
+                          citizen.name.isNotEmpty ? citizen.name[0].toUpperCase() : 'C',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              citizen.name,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '@${citizen.username}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.phone_rounded, size: 14, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(citizen.contactNumber, style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.home_rounded, size: 14, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          citizen.address,
+                          style: const TextStyle(fontSize: 13, color: Colors.black87),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildComplaintReport() {
+    return FutureBuilder<List<Complaint>>(
+      future: DBHelper().getAllComplaints(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        final list = snapshot.data ?? [];
+        if (list.isEmpty) {
+          return _buildEmptyState('No complaints found', Icons.assignment_turned_in_outlined);
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 110),
+          itemCount: list.length,
+          itemBuilder: (context, index) {
+            final complaint = list[index];
+            final citizenName = _registeredCitizens[complaint.citizenId]?.name ?? 'Unknown Citizen';
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.primaryBlueAccent, width: 1.2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    complaint.title,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                  ),
+                  const SizedBox(height: 8),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.person_outline_rounded, size: 14, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text('Citizen: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                      Text(citizenName, style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.category_outlined, size: 14, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text('Category: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                      Text(complaint.category, style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.location_on_outlined, size: 14, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text('Location: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                      Expanded(
+                        child: Text(
+                          complaint.location,
+                          style: const TextStyle(fontSize: 13, color: Colors.black87),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today_rounded, size: 13, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text('Date: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                      Text(complaint.createdAt, style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildComplaintStatusReport() {
+    return FutureBuilder<List<Complaint>>(
+      future: DBHelper().getAllComplaints(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        final list = snapshot.data ?? [];
+        if (list.isEmpty) {
+          return _buildEmptyState('No complaints found', Icons.assignment_turned_in_outlined);
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 110),
+          itemCount: list.length,
+          itemBuilder: (context, index) {
+            final complaint = list[index];
+            final citizenName = _registeredCitizens[complaint.citizenId]?.name ?? 'Unknown Citizen';
+
+            Color statusColor;
+            Color statusBgColor;
+            if (complaint.status == 'Resolved') {
+              statusColor = Colors.green.shade800;
+              statusBgColor = Colors.green.shade50;
+            } else if (complaint.status == 'In Progress') {
+              statusColor = AppColors.primaryBlue;
+              statusBgColor = AppColors.primaryBlueAccent;
+            } else {
+              statusColor = Colors.orange.shade800;
+              statusBgColor = Colors.orange.shade50;
+            }
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.primaryBlueAccent, width: 1.2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          complaint.title,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: statusBgColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          complaint.status,
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: statusColor),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.person_outline_rounded, size: 14, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text('Citizen Name: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
+                      Text(citizenName, style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFeedbackReport() {
+    return FutureBuilder<List<dynamic>>(
+      future: Future.wait([
+        DBHelper().getAllFeedback(),
+        DBHelper().getAllCitizens(),
+      ]),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        final feedbackList = (snapshot.data?[0] as List<FeedbackModel>?) ?? [];
+        final citizenList = (snapshot.data?[1] as List<Citizen>?) ?? [];
+        final citizenMap = {for (var c in citizenList) c.id: c.name};
+
+        if (feedbackList.isEmpty) {
+          return _buildEmptyState('No submitted feedback found', Icons.rate_review_outlined);
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 110),
+          itemCount: feedbackList.length,
+          itemBuilder: (context, index) {
+            final feedback = feedbackList[index];
+            final citizenName = citizenMap[feedback.citizenId] ?? 'Unknown Citizen';
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.primaryBlueAccent, width: 1.2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        citizenName,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                      ),
+                      Text(
+                        feedback.createdAt,
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Text(
+                    feedback.feedback,
+                    style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   // Admin Drawer
   Widget _buildAdminDrawer() {
     return Drawer(
@@ -1538,6 +2336,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   title: 'Notice Announcements',
                   isSelected: _selectedTabIndex == 3,
                   onTap: () => _navigateToTab(3),
+                ),
+                _buildDrawerItem(
+                  icon: Icons.rate_review_outlined,
+                  title: 'View Feedback',
+                  isSelected: _selectedTabIndex == 4,
+                  onTap: () => _navigateToTab(4),
+                ),
+                _buildDrawerItem(
+                  icon: Icons.analytics_outlined,
+                  title: 'Reports Center',
+                  isSelected: _selectedTabIndex == 5,
+                  onTap: () => _navigateToTab(5),
                 ),
                 const Padding(padding: EdgeInsets.symmetric(vertical: 8.0), child: Divider(height: 1)),
                 _buildDrawerSectionTitle('Security & Configuration'),

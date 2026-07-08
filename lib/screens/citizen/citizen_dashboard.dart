@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../models/citizen_model.dart';
 import '../../models/complaint_model.dart';
 import '../../models/announcement_model.dart';
+import '../../models/feedback_model.dart';
 import '../../database/db_helper.dart';
 import '../../widgets/app_colors.dart';
 import '../../widgets/custom_dialog.dart';
@@ -37,6 +38,11 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
   File? _evidenceImage;
   bool _isSubmitting = false;
 
+  // Feedback Form keys & controllers
+  final _feedbackFormKey = GlobalKey<FormState>();
+  final _feedbackController = TextEditingController();
+  bool _isSubmittingFeedback = false;
+
   // Dropdown list categories
   final List<String> _categories = [
     'Road Damage',
@@ -58,6 +64,7 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
     _titleController.dispose();
     _descController.dispose();
     _locationController.dispose();
+    _feedbackController.dispose();
     super.dispose();
   }
 
@@ -215,6 +222,7 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
       _buildHistoryContent(),
       _buildProfileContent(),
       _buildNoticeBoardContent(),
+      _buildFeedbackContent(),
     ];
 
     return Scaffold(
@@ -231,7 +239,9 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
                       ? 'My Complaints'
                       : _selectedTabIndex == 3
                           ? 'My Profile'
-                          : 'Notice Board',
+                          : _selectedTabIndex == 4
+                              ? 'Notice Board'
+                              : 'Submit Feedback',
           style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.white),
         ),
         backgroundColor: AppColors.primaryBlue,
@@ -996,6 +1006,192 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
     );
   }
 
+  Widget _buildFeedbackContent() {
+    if (widget.citizen.id == null) return const Center(child: Text('Invalid user profile'));
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 110),
+        child: Form(
+          key: _feedbackFormKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header Card
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppColors.primaryBlue, AppColors.primaryBlueLight],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryBlue.withValues(alpha: 0.15),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
+                    )
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.rate_review_rounded, color: Colors.white, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Your Feedback Matters',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Help us improve municipal and civic services. Share your suggestions, feedback, or complaints about operations directly with the administrators.',
+                      style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.9), height: 1.4),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Feedback multiline input field
+              _buildFieldLabel('Feedback & Suggestions'),
+              TextFormField(
+                controller: _feedbackController,
+                maxLines: 6,
+                keyboardType: TextInputType.multiline,
+                decoration: InputDecoration(
+                  hintText: 'Enter your suggestions, feedback, or issues regarding municipal services here...',
+                  hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                  fillColor: AppColors.white,
+                  filled: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide(color: AppColors.primaryBlueAccent, width: 1.2),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide(color: AppColors.primaryBlueAccent, width: 1.2),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide(color: AppColors.primaryBlue, width: 1.5),
+                  ),
+                  errorBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: const BorderSide(color: Colors.redAccent, width: 1.2),
+                  ),
+                ),
+                validator: (val) {
+                  if (val == null || val.trim().isEmpty) {
+                    return 'Feedback cannot be empty';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 28),
+
+              // Submit Button
+              SizedBox(
+                height: 50,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 1,
+                  ),
+                  onPressed: _isSubmittingFeedback
+                      ? null
+                      : () async {
+                          if (_feedbackFormKey.currentState!.validate()) {
+                            setState(() {
+                              _isSubmittingFeedback = true;
+                            });
+
+                            final now = DateTime.now();
+                            final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+                            final fbModel = FeedbackModel(
+                              citizenId: widget.citizen.id!,
+                              feedback: _feedbackController.text.trim(),
+                              createdAt: dateStr,
+                            );
+
+                            try {
+                              final id = await DBHelper().insertFeedback(fbModel);
+                              setState(() {
+                                _isSubmittingFeedback = false;
+                              });
+
+                              if (id != -1) {
+                                if (mounted) {
+                                  CustomDialog.show(
+                                    context: context,
+                                    title: 'Feedback Submitted',
+                                    message: 'Thank you for your valuable feedback! It has been recorded successfully.',
+                                    type: CustomDialogType.success,
+                                    onConfirm: () {
+                                      _feedbackController.clear();
+                                    },
+                                  );
+                                }
+                              } else {
+                                if (mounted) {
+                                  CustomDialog.show(
+                                    context: context,
+                                    title: 'Submission Failed',
+                                    message: 'Failed to record feedback in the database. Please try again.',
+                                    type: CustomDialogType.error,
+                                  );
+                                }
+                              }
+                            } catch (e) {
+                              setState(() {
+                                _isSubmittingFeedback = false;
+                              });
+                              if (mounted) {
+                                CustomDialog.show(
+                                  context: context,
+                                  title: 'Error',
+                                  message: 'Error: ${e.toString()}',
+                                  type: CustomDialogType.error,
+                                );
+                              }
+                            }
+                          }
+                        },
+                  icon: _isSubmittingFeedback
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.send_rounded, size: 18),
+                  label: const Text(
+                    'Submit Feedback',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // Modern complaint list card
   Widget _buildComplaintCard(Complaint complaint) {
     // Set status colors matching requirements
@@ -1431,6 +1627,12 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
                   title: 'Notice Board',
                   isSelected: _selectedTabIndex == 4,
                   onTap: () => _navigateToTab(4),
+                ),
+                _buildDrawerItem(
+                  icon: Icons.feedback_outlined,
+                  title: 'Submit Feedback',
+                  isSelected: _selectedTabIndex == 5,
+                  onTap: () => _navigateToTab(5),
                 ),
                 const Padding(padding: EdgeInsets.symmetric(vertical: 8.0), child: Divider(height: 1)),
                 _buildDrawerSectionTitle('Profile'),
