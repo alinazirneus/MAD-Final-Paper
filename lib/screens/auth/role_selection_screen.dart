@@ -96,7 +96,7 @@ class RoleSelectionScreen extends StatelessWidget {
               // Footer Text
               Center(
                 child: Text(
-                  'Powered by Municipal Administration',
+                  'Developed by Muhammad Ali Nazir (14478)',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey.shade400,

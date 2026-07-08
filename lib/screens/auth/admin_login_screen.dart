@@ -65,7 +65,10 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const AdminDashboard(),
+                  builder: (context) => AdminDashboard(
+                    adminName: '${adminData['firstName']} ${adminData['lastName']}',
+                    adminEmail: adminData['email'] as String,
+                  ),
                 ),
                 (route) => false,
               );

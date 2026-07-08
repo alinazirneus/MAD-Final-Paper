@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/citizen_model.dart';
+import '../models/complaint_model.dart';
 
 class DBHelper {
   static final DBHelper _instance = DBHelper._internal();
@@ -25,8 +26,9 @@ class DBHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2, // Upgraded database version for Phase 2 complaints schema
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
   }
 
@@ -57,19 +59,19 @@ class DBHelper {
       )
     ''');
 
-    // Complaints table
+    // Complaints table using camelCase columns matching requirements
     await db.execute('''
       CREATE TABLE complaints (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        citizenId INTEGER NOT NULL,
         title TEXT NOT NULL,
         description TEXT NOT NULL,
         category TEXT NOT NULL,
         location TEXT NOT NULL,
-        image_path TEXT,
+        imagePath TEXT,
         status TEXT NOT NULL DEFAULT 'Pending',
-        citizen_id INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY (citizen_id) REFERENCES citizens (id) ON DELETE CASCADE
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (citizenId) REFERENCES citizens (id) ON DELETE CASCADE
       )
     ''');
 
@@ -95,20 +97,38 @@ class DBHelper {
     ''');
   }
 
+  // Handle migration from schema version 1 to 2
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('DROP TABLE IF EXISTS complaints');
+      await db.execute('''
+        CREATE TABLE complaints (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          citizenId INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          category TEXT NOT NULL,
+          location TEXT NOT NULL,
+          imagePath TEXT,
+          status TEXT NOT NULL DEFAULT 'Pending',
+          createdAt TEXT NOT NULL,
+          FOREIGN KEY (citizenId) REFERENCES citizens (id) ON DELETE CASCADE
+        )
+      ''');
+    }
+  }
+
   // --- CITIZEN CRUD OPERATIONS ---
 
-  // Register a new citizen
   Future<int> registerCitizen(Citizen citizen) async {
     final db = await database;
     try {
       return await db.insert('citizens', citizen.toMap());
     } catch (e) {
-      // Username already exists or other error
       return -1;
     }
   }
 
-  // Login verification for citizen
   Future<Citizen?> loginCitizen(String username, String password) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
@@ -123,7 +143,6 @@ class DBHelper {
     return null;
   }
 
-  // Check if username is already taken
   Future<bool> isUsernameTaken(String username) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
@@ -134,7 +153,6 @@ class DBHelper {
     return maps.isNotEmpty;
   }
 
-  // Get all registered citizens (for Admin dashboard)
   Future<List<Citizen>> getAllCitizens() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('citizens');
@@ -145,7 +163,6 @@ class DBHelper {
 
   // --- ADMIN CREDENTIALS OPERATIONS ---
 
-  // Save/Cache admin details locally when they log in via API
   Future<void> saveAdminLocally(int id, String username, String firstName, String lastName, String email) async {
     final db = await database;
     await db.insert(
@@ -161,9 +178,136 @@ class DBHelper {
     );
   }
 
-  // Get all cached admin users
   Future<List<Map<String, dynamic>>> getLocalAdmins() async {
     final db = await database;
     return await db.query('admins');
+  }
+
+  // --- COMPLAINT CRUD OPERATIONS (PHASE 2) ---
+
+  // Insert a new complaint
+  Future<int> insertComplaint(Complaint complaint) async {
+    final db = await database;
+    try {
+      return await db.insert('complaints', complaint.toMap());
+    } catch (e) {
+      return -1;
+    }
+  }
+
+  // Get complaints submitted by a specific citizen
+  Future<List<Complaint>> getComplaintsByCitizen(int citizenId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'complaints',
+      where: 'citizenId = ?',
+      whereArgs: [citizenId],
+      orderBy: 'id DESC', // Show newest first
+    );
+
+    return List.generate(maps.length, (i) {
+      return Complaint.fromMap(maps[i]);
+    });
+  }
+
+  // Get all complaints for the admin
+  Future<List<Complaint>> getAllComplaints() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'complaints',
+      orderBy: 'id DESC',
+    );
+
+    return List.generate(maps.length, (i) {
+      return Complaint.fromMap(maps[i]);
+    });
+  }
+
+  // Update status of a complaint (Pending, In Progress, Resolved)
+  Future<int> updateComplaintStatus(int id, String status) async {
+    final db = await database;
+    return await db.update(
+      'complaints',
+      {'status': status},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  // Delete a complaint
+  Future<int> deleteComplaint(int id) async {
+    final db = await database;
+    return await db.delete(
+      'complaints',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  // Fetch counts of complaints by status for a specific citizen
+  Future<Map<String, int>> getCitizenComplaintMetrics(int citizenId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      'SELECT status, COUNT(*) as count FROM complaints WHERE citizenId = ? GROUP BY status',
+      [citizenId],
+    );
+
+    int pending = 0;
+    int inProgress = 0;
+    int resolved = 0;
+
+    for (var map in maps) {
+      final status = map['status'] as String;
+      final count = map['count'] as int;
+      if (status == 'Pending') {
+        pending = count;
+      } else if (status == 'In Progress') {
+        inProgress = count;
+      } else if (status == 'Resolved') {
+        resolved = count;
+      }
+    }
+
+    return {
+      'Pending': pending,
+      'In Progress': inProgress,
+      'Resolved': resolved,
+    };
+  }
+
+  // Fetch system-wide counts for the admin
+  Future<Map<String, int>> getAdminComplaintMetrics() async {
+    final db = await database;
+
+    // Count citizens
+    final citizenResult = await db.rawQuery('SELECT COUNT(*) as count FROM citizens');
+    final citizensCount = Sqflite.firstIntValue(citizenResult) ?? 0;
+
+    // Count complaints by status
+    final statusResult = await db.rawQuery('SELECT status, COUNT(*) as count FROM complaints GROUP BY status');
+
+    int pending = 0;
+    int inProgress = 0;
+    int resolved = 0;
+
+    for (var map in statusResult) {
+      final status = map['status'] as String;
+      final count = map['count'] as int;
+      if (status == 'Pending') {
+        pending = count;
+      } else if (status == 'In Progress') {
+        inProgress = count;
+      } else if (status == 'Resolved') {
+        resolved = count;
+      }
+    }
+
+    return {
+      'citizens': citizensCount,
+      'pending': pending,
+      'inProgress': inProgress,
+      'resolved': resolved,
+      'totalComplaints': pending + inProgress + resolved,
+    };
   }
 }
