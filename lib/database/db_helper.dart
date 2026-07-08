@@ -3,6 +3,7 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/citizen_model.dart';
 import '../models/complaint_model.dart';
+import '../models/announcement_model.dart';
 
 class DBHelper {
   static final DBHelper _instance = DBHelper._internal();
@@ -26,7 +27,7 @@ class DBHelper {
 
     return await openDatabase(
       path,
-      version: 3, // Upgraded to version 3 to support complaint status history tracking
+      version: 4, // Upgraded to version 4 to support updated announcements table schema
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -79,13 +80,13 @@ class DBHelper {
       )
     ''');
 
-    // Announcements table
+    // Announcements table (updated in version 4 to match spec columns)
     await db.execute('''
       CREATE TABLE announcements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        description TEXT NOT NULL,
+        createdAt TEXT NOT NULL
       )
     ''');
 
@@ -166,6 +167,17 @@ class DBHelper {
           });
         }
       }
+    }
+    if (oldVersion < 4) {
+      await db.execute('DROP TABLE IF EXISTS announcements');
+      await db.execute('''
+        CREATE TABLE announcements (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          createdAt TEXT NOT NULL
+        )
+      ''');
     }
   }
 
@@ -398,4 +410,52 @@ class DBHelper {
       'totalComplaints': pending + inProgress + resolved,
     };
   }
+
+  // --- ANNOUNCEMENT OPERATIONS ---
+
+  // Insert a new announcement
+  Future<int> insertAnnouncement(Announcement announcement) async {
+    final db = await database;
+    try {
+      return await db.insert('announcements', announcement.toMap());
+    } catch (e) {
+      return -1;
+    }
+  }
+
+  // Get all announcements, sorted newest first
+  Future<List<Announcement>> getAllAnnouncements() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'announcements',
+      orderBy: 'id DESC',
+    );
+
+    return List.generate(maps.length, (i) {
+      return Announcement.fromMap(maps[i]);
+    });
+  }
+
+  // Update an announcement
+  Future<int> updateAnnouncement(Announcement announcement) async {
+    if (announcement.id == null) return -1;
+    final db = await database;
+    return await db.update(
+      'announcements',
+      announcement.toMap(),
+      where: 'id = ?',
+      whereArgs: [announcement.id],
+    );
+  }
+
+  // Delete an announcement
+  Future<int> deleteAnnouncement(int id) async {
+    final db = await database;
+    return await db.delete(
+      'announcements',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
 }
+

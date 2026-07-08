@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../models/citizen_model.dart';
 import '../../models/complaint_model.dart';
+import '../../models/announcement_model.dart';
 import '../../database/db_helper.dart';
 import '../../widgets/app_colors.dart';
 import '../../widgets/custom_dialog.dart';
@@ -186,7 +187,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _buildHomeContent(),
       _buildCitizensTab(),
       _buildComplaintsTab(),
-      _buildPlaceholderContent('Notice announcements', Icons.campaign_rounded, 'Publish emergency alerts, maintenance schedules, and public bulletins directly to notice boards.'),
+      _buildAnnouncementsTab(),
     ];
 
     return Scaffold(
@@ -219,6 +220,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ],
       ),
       body: pages[_selectedTabIndex],
+      floatingActionButton: _selectedTabIndex == 3
+          ? Container(
+              margin: const EdgeInsets.only(bottom: 80),
+              child: FloatingActionButton(
+                onPressed: _showAddAnnouncementDialog,
+                backgroundColor: AppColors.primaryBlue,
+                foregroundColor: Colors.white,
+                child: const Icon(Icons.add_rounded),
+              ),
+            )
+          : null,
       bottomNavigationBar: _buildFloatingBottomTabBar(),
     );
   }
@@ -945,49 +957,499 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  // TAB 3: Announcements view placeholder
-  Widget _buildPlaceholderContent(String title, IconData icon, String description) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
+  // TAB 3: Notice Announcements UI Screen
+  Widget _buildAnnouncementsTab() {
+    return FutureBuilder<List<Announcement>>(
+      future: DBHelper().getAllAnnouncements(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        final list = snapshot.data ?? [];
+        if (list.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryBlueAccent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.campaign_outlined, size: 64, color: AppColors.primaryBlue),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'No Announcements Published',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Publish emergency notices, scheduling updates, or municipal alerts. Tap the float button below to publish.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade500, height: 1.4),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+          itemCount: list.length,
+          itemBuilder: (context, index) {
+            final announcement = list[index];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.primaryBlueAccent,
-                shape: BoxShape.circle,
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.primaryBlueAccent, width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  )
+                ],
               ),
-              child: Icon(
-                icon,
-                size: 64,
-                color: AppColors.primaryBlue,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryBlueAccent,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.campaign_outlined,
+                          color: AppColors.primaryBlue,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          announcement.title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primaryBlue,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    announcement.description,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.black87,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Text(
+                            announcement.createdAt,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, size: 20, color: AppColors.primaryBlue),
+                            onPressed: () => _showEditAnnouncementDialog(announcement),
+                            tooltip: 'Edit Announcement',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded, size: 20, color: Colors.redAccent),
+                            onPressed: () => _confirmDeleteAnnouncement(announcement.id!),
+                            tooltip: 'Delete Announcement',
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showAddAnnouncementDialog() async {
+    final titleController = TextEditingController();
+    final descController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      transitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (context, anim1, anim2) => Container(),
+      transitionBuilder: (dialogContext, anim1, anim2, child) {
+        return ScaleTransition(
+          scale: CurvedAnimation(parent: anim1, curve: Curves.easeInOut),
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text(
+              'Publish Announcement',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+            ),
+            content: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: titleController,
+                      decoration: InputDecoration(
+                        labelText: 'Announcement Title',
+                        labelStyle: TextStyle(color: Colors.grey.shade600),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.primaryBlue, width: 1.5),
+                        ),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Title cannot be empty';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: descController,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        labelText: 'Description / Details',
+                        labelStyle: TextStyle(color: Colors.grey.shade600),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.primaryBlue, width: 1.5),
+                        ),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Description cannot be empty';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 24),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: AppColors.primaryBlue,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text('Cancel', style: TextStyle(color: Colors.grey.shade600)),
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              description,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-                height: 1.4,
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.pop(dialogContext); // Close dialog
+
+                    final now = DateTime.now();
+                    final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+                    final announcement = Announcement(
+                      title: titleController.text.trim(),
+                      description: descController.text.trim(),
+                      createdAt: dateStr,
+                    );
+
+                    try {
+                      final id = await DBHelper().insertAnnouncement(announcement);
+                      if (id != -1) {
+                        if (mounted) {
+                          CustomDialog.show(
+                            context: context,
+                            title: 'Success',
+                            message: 'Announcement has been published successfully.',
+                            type: CustomDialogType.success,
+                            onConfirm: () {
+                              setState(() {}); // reload tab data
+                            },
+                          );
+                        }
+                      } else {
+                        if (mounted) {
+                          CustomDialog.show(
+                            context: context,
+                            title: 'Error',
+                            message: 'Failed to save announcement in local database.',
+                            type: CustomDialogType.error,
+                          );
+                        }
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        CustomDialog.show(
+                          context: context,
+                          title: 'Error',
+                          message: 'Error: ${e.toString()}',
+                          type: CustomDialogType.error,
+                        );
+                      }
+                    }
+                  }
+                },
+                child: const Text('Publish'),
               ),
-              textAlign: TextAlign.center,
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showEditAnnouncementDialog(Announcement announcement) async {
+    final titleController = TextEditingController(text: announcement.title);
+    final descController = TextEditingController(text: announcement.description);
+    final formKey = GlobalKey<FormState>();
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      transitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (context, anim1, anim2) => Container(),
+      transitionBuilder: (dialogContext, anim1, anim2, child) {
+        return ScaleTransition(
+          scale: CurvedAnimation(parent: anim1, curve: Curves.easeInOut),
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text(
+              'Edit Announcement',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
             ),
-          ],
-        ),
-      ),
+            content: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: titleController,
+                      decoration: InputDecoration(
+                        labelText: 'Announcement Title',
+                        labelStyle: TextStyle(color: Colors.grey.shade600),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.primaryBlue, width: 1.5),
+                        ),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Title cannot be empty';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: descController,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        labelText: 'Description / Details',
+                        labelStyle: TextStyle(color: Colors.grey.shade600),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.primaryBlue, width: 1.5),
+                        ),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Description cannot be empty';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text('Cancel', style: TextStyle(color: Colors.grey.shade600)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.pop(dialogContext); // Close dialog
+
+                    final updated = Announcement(
+                      id: announcement.id,
+                      title: titleController.text.trim(),
+                      description: descController.text.trim(),
+                      createdAt: announcement.createdAt, // Keep original timestamp
+                    );
+
+                    try {
+                      final result = await DBHelper().updateAnnouncement(updated);
+                      if (result > 0) {
+                        if (mounted) {
+                          CustomDialog.show(
+                            context: context,
+                            title: 'Success',
+                            message: 'Announcement updated successfully.',
+                            type: CustomDialogType.success,
+                            onConfirm: () {
+                              setState(() {}); // reload tab data
+                            },
+                          );
+                        }
+                      } else {
+                        if (mounted) {
+                          CustomDialog.show(
+                            context: context,
+                            title: 'Error',
+                            message: 'Failed to update announcement.',
+                            type: CustomDialogType.error,
+                          );
+                        }
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        CustomDialog.show(
+                          context: context,
+                          title: 'Error',
+                          message: 'Error: ${e.toString()}',
+                          type: CustomDialogType.error,
+                        );
+                      }
+                    }
+                  }
+                },
+                child: const Text('Update'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmDeleteAnnouncement(int id) async {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      transitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (context, anim1, anim2) => Container(),
+      transitionBuilder: (dialogContext, anim1, anim2, child) {
+        return ScaleTransition(
+          scale: CurvedAnimation(parent: anim1, curve: Curves.easeInOut),
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Delete Announcement?', style: TextStyle(fontWeight: FontWeight.bold)),
+            content: const Text('Are you sure you want to delete this announcement? This action cannot be undone.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text('Cancel', style: TextStyle(color: Colors.grey.shade600)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  Navigator.pop(dialogContext); // Close confirmation dialog
+                  try {
+                    final result = await DBHelper().deleteAnnouncement(id);
+                    if (result > 0) {
+                      if (mounted) {
+                        CustomDialog.show(
+                          context: context,
+                          title: 'Success',
+                          message: 'Announcement deleted successfully.',
+                          type: CustomDialogType.success,
+                          onConfirm: () {
+                            setState(() {}); // reload tab data
+                          },
+                        );
+                      }
+                    } else {
+                      if (mounted) {
+                        CustomDialog.show(
+                          context: context,
+                          title: 'Error',
+                          message: 'Failed to delete announcement.',
+                          type: CustomDialogType.error,
+                        );
+                      }
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      CustomDialog.show(
+                        context: context,
+                        title: 'Error',
+                        message: 'Error: ${e.toString()}',
+                        type: CustomDialogType.error,
+                      );
+                    }
+                  }
+                },
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

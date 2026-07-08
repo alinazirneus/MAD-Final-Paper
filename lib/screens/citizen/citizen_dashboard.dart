@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../models/citizen_model.dart';
 import '../../models/complaint_model.dart';
+import '../../models/announcement_model.dart';
 import '../../database/db_helper.dart';
 import '../../widgets/app_colors.dart';
 import '../../widgets/custom_dialog.dart';
@@ -213,6 +214,7 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
       _buildFormContent(),
       _buildHistoryContent(),
       _buildProfileContent(),
+      _buildNoticeBoardContent(),
     ];
 
     return Scaffold(
@@ -227,7 +229,9 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
                   ? 'Submit Complaint'
                   : _selectedTabIndex == 2
                       ? 'My Complaints'
-                      : 'My Profile',
+                      : _selectedTabIndex == 3
+                          ? 'My Profile'
+                          : 'Notice Board',
           style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.white),
         ),
         backgroundColor: AppColors.primaryBlue,
@@ -863,6 +867,135 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
     );
   }
 
+  Widget _buildNoticeBoardContent() {
+    return SafeArea(
+      child: FutureBuilder<List<Announcement>>(
+        future: DBHelper().getAllAnnouncements(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          final list = snapshot.data ?? [];
+          if (list.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryBlueAccent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.campaign_outlined, size: 64, color: AppColors.primaryBlue),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Bulletin Board Empty',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No municipal notices or community service announcements have been published yet. Check back later!',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade500, height: 1.4),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+            itemCount: list.length,
+            itemBuilder: (context, index) {
+              final announcement = list[index];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.primaryBlueAccent, width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    )
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryBlueAccent,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.campaign_outlined,
+                            color: AppColors.primaryBlue,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            announcement.title,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      announcement.description,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black87,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Published: ${announcement.createdAt}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
   // Modern complaint list card
   Widget _buildComplaintCard(Complaint complaint) {
     // Set status colors matching requirements
@@ -1292,6 +1425,12 @@ class _CitizenDashboardState extends State<CitizenDashboard> {
                   title: 'My History',
                   isSelected: _selectedTabIndex == 2,
                   onTap: () => _navigateToTab(2),
+                ),
+                _buildDrawerItem(
+                  icon: Icons.announcement_outlined,
+                  title: 'Notice Board',
+                  isSelected: _selectedTabIndex == 4,
+                  onTap: () => _navigateToTab(4),
                 ),
                 const Padding(padding: EdgeInsets.symmetric(vertical: 8.0), child: Divider(height: 1)),
                 _buildDrawerSectionTitle('Profile'),
